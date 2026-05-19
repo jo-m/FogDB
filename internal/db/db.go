@@ -6,28 +6,35 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite" // sqlite driver registration
 )
 
-// pragmas lists SQLite PRAGMA settings applied on every connection open.
-var pragmas = []struct{ name, value string }{
-	{"journal_mode", "WAL"},
-	{"synchronous", "NORMAL"},
-	{"temp_store", "MEMORY"},
-	{"cache_size", "1000000000"},
-	{"foreign_keys", "ON"},
-	{"mmap_size", "2147483648"},
+// pragmaDSN converts a plain file path into a modernc.org/sqlite DSN that
+// encodes all desired PRAGMAs as _pragma query parameters. This ensures every
+// connection opened by the sql.DB pool inherits the settings, not just the
+// first one.
+func pragmaDSN(path string) string {
+	q := url.Values{}
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "synchronous(NORMAL)")
+	q.Add("_pragma", "temp_store(MEMORY)")
+	q.Add("_pragma", "cache_size(1000000000)")
+	q.Add("_pragma", "foreign_keys(ON)")
+	q.Add("_pragma", "mmap_size(2147483648)")
+	return "file:" + path + "?" + q.Encode()
 }
 
-// Open opens (or creates) a SQLite database at dsn and applies all pending
-// goose migrations. The pragmas in [pragmas] are set before running migrations.
+// Open opens (or creates) a SQLite database at path and applies all pending
+// goose migrations. PRAGMAs are embedded in the DSN so they are applied on
+// every new connection in the pool.
 //
-// dsn is a modernc.org/sqlite DSN, typically a file path or
-// "file:foo.db?_pragma=...".
-func Open(ctx context.Context, dsn string) (*sql.DB, error) {
-	slog.Info("opening sqlite database", "dsn", dsn)
+// path is a plain filesystem path (e.g. "nebeltracker.sqlite").
+func Open(ctx context.Context, path string) (*sql.DB, error) {
+	dsn := pragmaDSN(path)
+	slog.Info("opening sqlite database", "path", path)
 	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("sql.Open: %w", err)
@@ -35,12 +42,6 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("ping: %w", err)
-	}
-	for _, p := range pragmas {
-		if _, err := sqlDB.ExecContext(ctx, "PRAGMA "+p.name+" = "+p.value+";"); err != nil {
-			_ = sqlDB.Close()
-			return nil, fmt.Errorf("set pragma %s: %w", p.name, err)
-		}
 	}
 
 	if err := migrate(ctx, sqlDB); err != nil {
