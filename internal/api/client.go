@@ -84,9 +84,9 @@ type stacAsset struct {
 	Updated time.Time `json:"updated"`
 }
 
-// ListAllItems retrieves every item in the collection, following pagination
+// listAllItems retrieves every item in the collection, following pagination
 // links. With the current dataset this is a handful of features.
-func (c *Client) ListAllItems(ctx context.Context) ([]stacFeature, error) {
+func (c *Client) listAllItems(ctx context.Context) ([]stacFeature, error) {
 	first := fmt.Sprintf("%s/api/stac/v1/collections/%s/items?limit=100", c.BaseURL, CollectionID)
 	var all []stacFeature
 	next := first
@@ -144,7 +144,7 @@ type LatestAsset struct {
 // highest run timestamp for each requested parameter. Errors if any requested
 // parameter has no matching asset.
 func (c *Client) LatestAssets(ctx context.Context, params []string) (map[string]LatestAsset, error) {
-	features, err := c.ListAllItems(ctx)
+	features, err := c.listAllItems(ctx)
 	if err != nil {
 		return nil, err
 	}

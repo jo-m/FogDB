@@ -373,7 +373,7 @@ func makeStageDir(parent string) (string, func(), error) {
 			_ = os.RemoveAll(dir)
 		}, nil
 	}
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.MkdirAll(parent, 0o750); err != nil {
 		return "", func() {}, err
 	}
 	return parent, func() {}, nil
