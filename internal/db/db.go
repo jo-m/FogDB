@@ -11,8 +11,18 @@ import (
 	_ "modernc.org/sqlite" // sqlite driver registration
 )
 
+// pragmas lists SQLite PRAGMA settings applied on every connection open.
+var pragmas = []struct{ name, value string }{
+	{"journal_mode", "WAL"},
+	{"synchronous", "NORMAL"},
+	{"temp_store", "MEMORY"},
+	{"cache_size", "1000000000"},
+	{"foreign_keys", "ON"},
+	{"mmap_size", "2147483648"},
+}
+
 // Open opens (or creates) a SQLite database at dsn and applies all pending
-// goose migrations. PRAGMA foreign_keys is enabled.
+// goose migrations. The pragmas in [pragmas] are set before running migrations.
 //
 // dsn is a modernc.org/sqlite DSN, typically a file path or
 // "file:foo.db?_pragma=...".
@@ -26,13 +36,11 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("ping: %w", err)
 	}
-	if _, err := sqlDB.ExecContext(ctx, "PRAGMA foreign_keys = ON;"); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("enable foreign_keys: %w", err)
-	}
-	if _, err := sqlDB.ExecContext(ctx, "PRAGMA journal_mode = WAL;"); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("enable WAL: %w", err)
+	for _, p := range pragmas {
+		if _, err := sqlDB.ExecContext(ctx, "PRAGMA "+p.name+" = "+p.value+";"); err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("set pragma %s: %w", p.name, err)
+		}
 	}
 
 	if err := migrate(ctx, sqlDB); err != nil {
