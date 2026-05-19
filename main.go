@@ -10,7 +10,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"flag"
 	"fmt"
 	"log/slog"
 	"math"
@@ -20,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	arg "github.com/alexflint/go-arg"
 	geo "github.com/kellydunn/golang-geo"
 
 	"jo-m.ch/go/nebeltracker/internal/api"
@@ -35,28 +35,35 @@ var wantedParameters = []string{
 	"tre200h0", // air temperature 2m (degC), 1h
 }
 
-// Geographic filter: only forecast points within maxDistanceKm of the centre
-// (Zürich) are stored in the database.
-const (
-	centreLat     = 47.371935
-	centreLon     = 8.539336
-	maxDistanceKm = 35.0
-)
+// AppConfig contains application-wide configuration.
+// It has struct tags compatible with [github.com/alexflint/go-arg].
+//
+//revive:disable:exported Naming necessary for struct embedding.
+type AppConfig struct {
+	// DBPath is the path to the SQLite database file.
+	DBPath string `arg:"--db,env:NEBELTRACKER_DB" default:"nebeltracker.sqlite" help:"Path to the SQLite database file" placeholder:"PATH"`
+	// LogLevel is the log verbosity level passed to slog.
+	LogLevel string `arg:"--log-level,env:NEBELTRACKER_LOG_LEVEL" default:"info" help:"Log level: debug|info|warn|error" placeholder:"LEVEL"`
+	// CentreLat is the WGS84 latitude of the geographic filter centre.
+	// Only forecast points within CentreMaxDistanceKm of (CentreLat, CentreLon) are stored.
+	CentreLat float64 `arg:"--centre-lat,env:NEBELTRACKER_CENTRE_LAT" default:"47.371935" help:"WGS84 latitude of the geographic filter centre" placeholder:"LAT"`
+	// CentreLon is the WGS84 longitude of the geographic filter centre.
+	CentreLon float64 `arg:"--centre-lon,env:NEBELTRACKER_CENTRE_LON" default:"8.539336" help:"WGS84 longitude of the geographic filter centre" placeholder:"LON"`
+	// CentreMaxDistanceKm is the radius of the geographic filter in kilometres.
+	CentreMaxDistanceKm float64 `arg:"--centre-max-distance-km,env:NEBELTRACKER_CENTRE_MAX_DISTANCE_KM" default:"35" help:"Radius of the geographic filter in kilometres" placeholder:"KM"`
+}
 
 func main() {
-	dbPath := flag.String("db", "nebeltracker.sqlite", "path to the SQLite database file")
-	tmpDir := flag.String("tmp", "", "directory for staged CSV downloads (default: OS temp)")
-	timeout := flag.Duration("timeout", 30*time.Minute, "overall workflow timeout")
-	logLevel := flag.String("log-level", "info", "slog level: debug|info|warn|error")
-	flag.Parse()
+	var cfg AppConfig
+	arg.MustParse(&cfg)
 
-	setupLogger(*logLevel)
+	setupLogger(cfg.LogLevel)
 
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	ctx = withSignalCancel(ctx)
 
-	if err := run(ctx, *dbPath, *tmpDir); err != nil {
+	if err := run(ctx, cfg); err != nil {
 		slog.Error("ingest workflow failed", "err", err)
 		os.Exit(1)
 	}
@@ -64,17 +71,17 @@ func main() {
 }
 
 // run executes one ingest cycle.
-func run(ctx context.Context, dbPath, tmpDir string) error {
+func run(ctx context.Context, cfg AppConfig) error {
 	start := time.Now()
 
-	stageDir, cleanup, err := makeStageDir(tmpDir)
+	stageDir, cleanup, err := makeStageDir()
 	if err != nil {
 		return fmt.Errorf("create stage dir: %w", err)
 	}
 	defer cleanup()
 	slog.Info("staging directory ready", "path", stageDir)
 
-	sqlDB, err := db.Open(ctx, dbPath)
+	sqlDB, err := db.Open(ctx, cfg.DBPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
@@ -82,7 +89,7 @@ func run(ctx context.Context, dbPath, tmpDir string) error {
 
 	client := api.NewClient()
 
-	if err := syncMetadata(ctx, client, sqlDB, stageDir); err != nil {
+	if err := syncMetadata(ctx, client, sqlDB, stageDir, cfg.CentreLat, cfg.CentreLon, cfg.CentreMaxDistanceKm); err != nil {
 		return fmt.Errorf("sync metadata: %w", err)
 	}
 
@@ -95,8 +102,9 @@ func run(ctx context.Context, dbPath, tmpDir string) error {
 }
 
 // syncMetadata downloads the parameter and point metadata CSVs and upserts
-// them into the database.
-func syncMetadata(ctx context.Context, client *api.Client, sqlDB *sql.DB, stageDir string) error {
+// them into the database. Only locations within maxKm of (centreLat, centreLon)
+// are stored.
+func syncMetadata(ctx context.Context, client *api.Client, sqlDB *sql.DB, stageDir string, centreLat, centreLon, maxKm float64) error {
 	paramsPath := filepath.Join(stageDir, "meta_parameters.csv")
 	pointsPath := filepath.Join(stageDir, "meta_point.csv")
 
@@ -129,11 +137,11 @@ func syncMetadata(ctx context.Context, client *api.Client, sqlDB *sql.DB, stageD
 	}
 	slog.Info("parsed meta_point", "count", len(locs))
 
-	filtered := filterLocationsByDistance(locs, centreLat, centreLon, maxDistanceKm)
+	filtered := filterLocationsByDistance(locs, centreLat, centreLon, maxKm)
 	slog.Info("locations filtered by distance",
 		"centre_lat", centreLat,
 		"centre_lon", centreLon,
-		"max_km", maxDistanceKm,
+		"max_km", maxKm,
 		"kept", len(filtered),
 		"dropped", len(locs)-len(filtered),
 	)
@@ -359,24 +367,17 @@ func downloadToFile(ctx context.Context, client *api.Client, url, path string) e
 	return nil
 }
 
-// makeStageDir prepares a directory for staged downloads. If parent is empty
-// a fresh temporary directory is created; the cleanup func removes the whole
-// tree. If parent is non-empty it is used as-is and never cleaned up.
-func makeStageDir(parent string) (string, func(), error) {
-	if parent == "" {
-		dir, err := os.MkdirTemp("", "nebeltracker-*")
-		if err != nil {
-			return "", func() {}, err
-		}
-		return dir, func() {
-			slog.Info("removing staging directory", "path", dir)
-			_ = os.RemoveAll(dir)
-		}, nil
-	}
-	if err := os.MkdirAll(parent, 0o750); err != nil {
+// makeStageDir creates a fresh OS temporary directory for staged downloads.
+// The returned cleanup func removes the whole tree.
+func makeStageDir() (string, func(), error) {
+	dir, err := os.MkdirTemp("", "nebeltracker-*")
+	if err != nil {
 		return "", func() {}, err
 	}
-	return parent, func() {}, nil
+	return dir, func() {
+		slog.Info("removing staging directory", "path", dir)
+		_ = os.RemoveAll(dir)
+	}, nil
 }
 
 func setupLogger(level string) {

@@ -3,6 +3,7 @@ module jo-m.ch/go/nebeltracker
 go 1.26.3
 
 require (
+	github.com/alexflint/go-arg v1.6.1
 	github.com/kellydunn/golang-geo v0.7.0
 	github.com/pressly/goose/v3 v3.27.1
 	golang.org/x/text v0.37.0
@@ -19,6 +20,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/ClickHouse/clickhouse-go/v2 v2.45.0 // indirect
+	github.com/alexflint/go-scalar v1.2.0 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/anthropics/anthropic-sdk-go v1.38.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
