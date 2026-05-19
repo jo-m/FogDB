@@ -1,12 +1,14 @@
 # FogDB
 
-One-shot Go binary: downloads MeteoSwiss point-forecast CSVs (STAC collection
-`ch.meteoschweiz.ogd-local-forecasting`) and upserts them into a local
-SQLite archive. Intended to be scheduled hourly. For each (location,
-parameter) it keeps only the earliest-valid-time row of the run.
+Long-running Go binary: downloads MeteoSwiss point-forecast CSVs (STAC
+collection `ch.meteoschweiz.ogd-local-forecasting`) and upserts them into a
+local SQLite archive. Runs one ingest cycle on startup, then repeats on a
+configurable interval. For each (location, parameter) it keeps only the
+earliest-valid-time row of the run.
 
 ## Layout
-- `main.go` - workflow: open/migrate DB, sync metadata, fetch latest assets, parse, filter by distance, collapse to earliest-per-location, upsert.
+- `main.go` - flag parsing, logger + signal setup, ticker loop that invokes `ingest.Run` on startup and every `--interval`, bounded by `--run-timeout`.
+- `internal/ingest/` - one ingest cycle: open/migrate DB, sync metadata, fetch latest assets, parse, filter by distance, collapse to earliest-per-location, upsert.
 - `internal/api/` - STAC client + asset filename parsing (`vnut12.lssw.<YYYYMMDDHHmm>.<param>.csv`).
 - `internal/csvparse/` - Latin1 (ISO-8859-1) semicolon CSV parsers for `meta_parameters`, `meta_point`, per-parameter forecasts. Test fixtures in `internal/csvparse/testdata/`.
 - `internal/db/` - modernc.org/sqlite + embedded goose migrations (`migrations/*.sql`); `STRICT` tables.
@@ -22,11 +24,11 @@ parameter) it keeps only the earliest-valid-time row of the run.
 - `--log-level debug|info|warn|error` (default `info`)
 - `--centre-lat`, `--centre-lon` (defaults: Zürich 47.371935, 8.539336)
 - `--centre-max-distance-km` (default 35) - great-circle filter radius.
-
-Workflow context timeout is hardcoded to 5 min in `main.main`.
+- `--interval DUR` (default `45m`) - wall-clock spacing between ingest cycles.
+- `--run-timeout DUR` (default `5m`) - per-cycle context timeout.
 
 ## Hardcoded
-- `wantedParameters` in `main.go` (`jww003i0`, `rre150h0`, `tre200h0`). Edit to ingest more.
+- `wantedParameters` in `internal/ingest/ingest.go` (`jww003i0`, `rre150h0`, `tre200h0`). Edit to ingest more.
 
 ## Dev
 `make check` runs lint (gofmt, vet, staticcheck, revive, govulncheck, gosec) + build + tests. Must pass before declaring work done. Other targets: `make format`, `make test`, `make bench`.
