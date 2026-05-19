@@ -227,6 +227,17 @@ func ingestForecasts(ctx context.Context, client *api.Client, sqlDB *sql.DB, sta
 			)
 		}
 
+		// For archival we keep only the earliest-timestamp row per location
+		// (the "now" forecast of this run); the rest of the horizon is
+		// discarded so the database grows linearly in time, not in horizon.
+		before := len(dbRows)
+		dbRows = keepEarliestPerLocation(dbRows)
+		slog.Info("collapsed to earliest-per-location",
+			"parameter", param,
+			"input_rows", before,
+			"kept_rows", len(dbRows),
+		)
+
 		if err := db.UpsertForecasts(ctx, sqlDB, dbRows); err != nil {
 			return fmt.Errorf("upsert forecasts for %s: %w", param, err)
 		}
@@ -258,6 +269,25 @@ func buildForecastRows(
 		})
 	}
 	return out, skipped, nil
+}
+
+// keepEarliestPerLocation reduces rows to one entry per LocationID, namely
+// the one with the smallest Timestamp. All input rows are assumed to share
+// the same ParameterID (this is called once per parameter). Output order is
+// not specified.
+func keepEarliestPerLocation(rows []db.ForecastRow) []db.ForecastRow {
+	best := make(map[int64]db.ForecastRow, len(rows))
+	for _, r := range rows {
+		cur, ok := best[r.LocationID]
+		if !ok || r.Timestamp.Before(cur.Timestamp) {
+			best[r.LocationID] = r
+		}
+	}
+	out := make([]db.ForecastRow, 0, len(best))
+	for _, r := range best {
+		out = append(out, r)
+	}
+	return out
 }
 
 // parseForecastFile is a small helper that opens & parses a forecast CSV.
