@@ -1,4 +1,4 @@
-module jo-m.ch/go/nebeltracker
+module jo-m.ch/go/fogdb
 
 go 1.26.3
 

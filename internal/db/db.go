@@ -31,7 +31,7 @@ func pragmaDSN(path string) string {
 // goose migrations. PRAGMAs are embedded in the DSN so they are applied on
 // every new connection in the pool.
 //
-// path is a plain filesystem path (e.g. "nebeltracker.sqlite").
+// path is a plain filesystem path (e.g. "db.sqlite").
 func Open(ctx context.Context, path string) (*sql.DB, error) {
 	dsn := pragmaDSN(path)
 	slog.Info("opening sqlite database", "path", path)

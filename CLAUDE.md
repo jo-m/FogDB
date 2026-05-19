@@ -1,4 +1,4 @@
-# nebeltracker
+# FogDB
 
 One-shot Go binary: downloads MeteoSwiss point-forecast CSVs (STAC collection
 `ch.meteoschweiz.ogd-local-forecasting`) and upserts them into a local
@@ -17,8 +17,8 @@ parameter) it keeps only the earliest-valid-time row of the run.
 - `forecasts` - unique `(location_id, parameter_id, timestamp)`, timestamp is RFC3339 UTC; upsert overwrites `value`. FK -> locations/parameters with `ON DELETE RESTRICT`. Indexed on `timestamp`.
 
 ## Run
-`go run . [flags]`. All flags also accept the env var `NEBELTRACKER_<UPPER_SNAKE>`.
-- `--db PATH` (default `nebeltracker.sqlite`)
+`go run . [flags]`. All flags also accept the env var `FOGDB_<UPPER_SNAKE>`.
+- `--db PATH` (default `db.sqlite`)
 - `--log-level debug|info|warn|error` (default `info`)
 - `--centre-lat`, `--centre-lon` (defaults: Zürich 47.371935, 8.539336)
 - `--centre-max-distance-km` (default 35) - great-circle filter radius.

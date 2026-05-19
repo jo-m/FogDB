@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"jo-m.ch/go/nebeltracker/internal/csvparse"
+	"jo-m.ch/go/fogdb/internal/csvparse"
 )
 
 // UpsertParameters writes/updates one row per entry into the parameters table

@@ -1,4 +1,4 @@
-// Command nebeltracker runs one ingest cycle: download MeteoSwiss point
+// Command fogdb runs one ingest cycle: download MeteoSwiss point
 // forecast data (metadata + the configured parameter files) and write/upsert
 // it into a local SQLite database.
 //
@@ -22,9 +22,9 @@ import (
 	arg "github.com/alexflint/go-arg"
 	geo "github.com/kellydunn/golang-geo"
 
-	"jo-m.ch/go/nebeltracker/internal/api"
-	"jo-m.ch/go/nebeltracker/internal/csvparse"
-	"jo-m.ch/go/nebeltracker/internal/db"
+	"jo-m.ch/go/fogdb/internal/api"
+	"jo-m.ch/go/fogdb/internal/csvparse"
+	"jo-m.ch/go/fogdb/internal/db"
 )
 
 // wantedParameters are the forecast parameters we ingest. Extend the list to
@@ -41,16 +41,16 @@ var wantedParameters = []string{
 //revive:disable:exported Naming necessary for struct embedding.
 type AppConfig struct {
 	// DBPath is the path to the SQLite database file.
-	DBPath string `arg:"--db,env:NEBELTRACKER_DB" default:"nebeltracker.sqlite" help:"Path to the SQLite database file" placeholder:"PATH"`
+	DBPath string `arg:"--db,env:FOGDB_DB" default:"db.sqlite" help:"Path to the SQLite database file" placeholder:"PATH"`
 	// LogLevel is the log verbosity level passed to slog.
-	LogLevel string `arg:"--log-level,env:NEBELTRACKER_LOG_LEVEL" default:"info" help:"Log level: debug|info|warn|error" placeholder:"LEVEL"`
+	LogLevel string `arg:"--log-level,env:FOGDB_LOG_LEVEL" default:"info" help:"Log level: debug|info|warn|error" placeholder:"LEVEL"`
 	// CentreLat is the WGS84 latitude of the geographic filter centre.
 	// Only forecast points within CentreMaxDistanceKm of (CentreLat, CentreLon) are stored.
-	CentreLat float64 `arg:"--centre-lat,env:NEBELTRACKER_CENTRE_LAT" default:"47.371935" help:"WGS84 latitude of the geographic filter centre" placeholder:"LAT"`
+	CentreLat float64 `arg:"--centre-lat,env:FOGDB_CENTRE_LAT" default:"47.371935" help:"WGS84 latitude of the geographic filter centre" placeholder:"LAT"`
 	// CentreLon is the WGS84 longitude of the geographic filter centre.
-	CentreLon float64 `arg:"--centre-lon,env:NEBELTRACKER_CENTRE_LON" default:"8.539336" help:"WGS84 longitude of the geographic filter centre" placeholder:"LON"`
+	CentreLon float64 `arg:"--centre-lon,env:FOGDB_CENTRE_LON" default:"8.539336" help:"WGS84 longitude of the geographic filter centre" placeholder:"LON"`
 	// CentreMaxDistanceKm is the radius of the geographic filter in kilometres.
-	CentreMaxDistanceKm float64 `arg:"--centre-max-distance-km,env:NEBELTRACKER_CENTRE_MAX_DISTANCE_KM" default:"35" help:"Radius of the geographic filter in kilometres" placeholder:"KM"`
+	CentreMaxDistanceKm float64 `arg:"--centre-max-distance-km,env:FOGDB_CENTRE_MAX_DISTANCE_KM" default:"35" help:"Radius of the geographic filter in kilometres" placeholder:"KM"`
 }
 
 func main() {
@@ -370,7 +370,7 @@ func downloadToFile(ctx context.Context, client *api.Client, url, path string) e
 // makeStageDir creates a fresh OS temporary directory for staged downloads.
 // The returned cleanup func removes the whole tree.
 func makeStageDir() (string, func(), error) {
-	dir, err := os.MkdirTemp("", "nebeltracker-*")
+	dir, err := os.MkdirTemp("", "fogdb-*")
 	if err != nil {
 		return "", func() {}, err
 	}

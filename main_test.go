@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"jo-m.ch/go/nebeltracker/internal/db"
+	"jo-m.ch/go/fogdb/internal/db"
 )
 
 func TestKeepEarliestPerLocation(t *testing.T) {

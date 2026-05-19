@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"jo-m.ch/go/nebeltracker/internal/csvparse"
+	"jo-m.ch/go/fogdb/internal/csvparse"
 )
 
 // openTestDB creates a temporary SQLite database, applies all migrations, and
