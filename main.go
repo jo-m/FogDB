@@ -13,11 +13,14 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
+
+	geo "github.com/kellydunn/golang-geo"
 
 	"jo-m.ch/go/nebeltracker/internal/api"
 	"jo-m.ch/go/nebeltracker/internal/csvparse"
@@ -31,6 +34,14 @@ var wantedParameters = []string{
 	"rre150h0", // precipitation (mm), 1h
 	"tre200h0", // air temperature 2m (degC), 1h
 }
+
+// Geographic filter: only forecast points within maxDistanceKm of the centre
+// (Zürich) are stored in the database.
+const (
+	centreLat     = 47.371935
+	centreLon     = 8.539336
+	maxDistanceKm = 35.0
+)
 
 func main() {
 	dbPath := flag.String("db", "nebeltracker.sqlite", "path to the SQLite database file")
@@ -118,13 +129,40 @@ func syncMetadata(ctx context.Context, client *api.Client, sqlDB *sql.DB, stageD
 	}
 	slog.Info("parsed meta_point", "count", len(locs))
 
+	filtered := filterLocationsByDistance(locs, centreLat, centreLon, maxDistanceKm)
+	slog.Info("locations filtered by distance",
+		"centre_lat", centreLat,
+		"centre_lon", centreLon,
+		"max_km", maxDistanceKm,
+		"kept", len(filtered),
+		"dropped", len(locs)-len(filtered),
+	)
+
 	if _, err := db.UpsertParameters(ctx, sqlDB, params); err != nil {
 		return fmt.Errorf("upsert parameters: %w", err)
 	}
-	if _, err := db.UpsertLocations(ctx, sqlDB, locs); err != nil {
+	if _, err := db.UpsertLocations(ctx, sqlDB, filtered); err != nil {
 		return fmt.Errorf("upsert locations: %w", err)
 	}
 	return nil
+}
+
+// filterLocationsByDistance returns the subset of locs within maxKm of
+// (lat,lon), measured as the great-circle distance. Locations with missing
+// WGS84 coordinates are dropped.
+func filterLocationsByDistance(locs []csvparse.Location, lat, lon, maxKm float64) []csvparse.Location {
+	centre := geo.NewPoint(lat, lon)
+	out := make([]csvparse.Location, 0, len(locs))
+	for _, l := range locs {
+		if math.IsNaN(l.WGS84Lat) || math.IsNaN(l.WGS84Lon) {
+			continue
+		}
+		p := geo.NewPoint(l.WGS84Lat, l.WGS84Lon)
+		if centre.GreatCircleDistance(p) <= maxKm {
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 // ingestForecasts discovers and downloads the latest forecast asset for each
@@ -180,9 +218,12 @@ func ingestForecasts(ctx context.Context, client *api.Client, sqlDB *sql.DB, sta
 			return fmt.Errorf("build db rows for %s: %w", param, err)
 		}
 		if skipped > 0 {
-			slog.Warn("skipped forecast rows with unknown location",
+			// Most rows belong to points outside the configured distance
+			// filter and are intentionally dropped here.
+			slog.Info("dropped forecast rows for non-stored locations",
 				"parameter", param,
-				"skipped", skipped,
+				"dropped", skipped,
+				"kept", len(dbRows),
 			)
 		}
 
