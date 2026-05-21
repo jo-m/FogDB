@@ -26,6 +26,7 @@ var wantedParameters = []string{
 	"jww003i0", // weather icon, 3h
 	"rre150h0", // precipitation (mm), 1h
 	"tre200h0", // air temperature 2m (degC), 1h
+	"sre000h0", // sunshine duration, 1h
 }
 
 // Config bundles the parameters that govern a single ingest cycle.

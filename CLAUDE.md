@@ -28,7 +28,7 @@ earliest-valid-time row of the run.
 - `--run-timeout DUR` (default `5m`) - per-cycle context timeout.
 
 ## Hardcoded
-- `wantedParameters` in `internal/ingest/ingest.go` (`jww003i0`, `rre150h0`, `tre200h0`). Edit to ingest more.
+- `wantedParameters` in `internal/ingest/ingest.go` (`jww003i0`, `rre150h0`, `tre200h0`, `sre000h0`). Edit to ingest more.
 
 ## Dev
 `make check` runs lint (gofmt, vet, staticcheck, revive, govulncheck, gosec) + build + tests. Must pass before declaring work done. Other targets: `make format`, `make test`, `make bench`.
