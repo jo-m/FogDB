@@ -1,7 +1,7 @@
 # FogDB
 
 Long-running Go binary that ingests MeteoSwiss point-forecast CSVs (STAC collection `ch.meteoschweiz.ogd-local-forecasting`) into a local SQLite archive.
-Runs one cycle on startup, then repeats on a configurable interval, keeping only the earliest-valid-time row per (location, parameter) per run.
+Runs one cycle on startup, then repeats on a configurable interval, keeping the now-cast row (valid time == run reference time) per (location, parameter) per run.
 
 ## Run
 

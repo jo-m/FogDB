@@ -3,12 +3,13 @@
 Long-running Go binary: downloads MeteoSwiss point-forecast CSVs (STAC
 collection `ch.meteoschweiz.ogd-local-forecasting`) and upserts them into a
 local SQLite archive. Runs one ingest cycle on startup, then repeats on a
-configurable interval. For each (location, parameter) it keeps only the
-earliest-valid-time row of the run.
+configurable interval. For each (location, parameter) it keeps the now-cast
+row of the run (valid time == run reference time), yielding one data point per
+hour as runs advance.
 
 ## Layout
 - `main.go` - flag parsing, logger + signal setup, ticker loop that invokes `ingest.Run` on startup and every `--interval`, bounded by `--run-timeout`.
-- `internal/ingest/` - one ingest cycle: open/migrate DB, sync metadata, fetch latest assets, parse, filter by distance, collapse to earliest-per-location, upsert.
+- `internal/ingest/` - one ingest cycle: open/migrate DB, sync metadata, fetch latest assets, parse, filter by distance, select now-cast per location, upsert.
 - `internal/api/` - STAC client + asset filename parsing (`vnut12.lssw.<YYYYMMDDHHmm>.<param>.csv`).
 - `internal/csvparse/` - Latin1 (ISO-8859-1) semicolon CSV parsers for `meta_parameters`, `meta_point`, per-parameter forecasts. Test fixtures in `internal/csvparse/testdata/`.
 - `internal/db/` - modernc.org/sqlite + embedded goose migrations (`migrations/*.sql`); `STRICT` tables.

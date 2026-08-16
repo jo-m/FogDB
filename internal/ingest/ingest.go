@@ -45,8 +45,8 @@ type Config struct {
 
 // Run executes one ingest cycle: open/migrate the database, sync parameter
 // and location metadata, fetch the latest forecast asset for each wanted
-// parameter, collapse to the earliest-valid-time row per location, and upsert
-// the result. The cycle aborts as soon as ctx is cancelled.
+// parameter, select the now-cast row per location, and upsert the result. The
+// cycle aborts as soon as ctx is cancelled.
 func Run(ctx context.Context, cfg Config) error {
 	start := time.Now()
 
@@ -211,13 +211,15 @@ func ingestForecasts(ctx context.Context, client *api.Client, sqlDB *sql.DB, sta
 			)
 		}
 
-		// For archival we keep only the earliest-timestamp row per location
-		// (the "now" forecast of this run); the rest of the horizon is
-		// discarded so the database grows linearly in time, not in horizon.
+		// For archival we keep only the now-cast of this run: the row whose
+		// valid time equals the run's reference time. As runs advance hourly
+		// this yields one data point per hour rather than replaying the whole
+		// horizon, so the database grows linearly in time, not in horizon.
 		before := len(dbRows)
-		dbRows = keepEarliestPerLocation(dbRows)
-		slog.Info("collapsed to earliest-per-location",
+		dbRows = keepAtReferenceTime(dbRows, a.RunTime)
+		slog.Info("selected now-cast per location",
 			"parameter", param,
+			"run_time_utc", a.RunTime.Format(time.RFC3339),
 			"input_rows", before,
 			"kept_rows", len(dbRows),
 		)
@@ -255,15 +257,18 @@ func buildForecastRows(
 	return out, skipped, nil
 }
 
-// keepEarliestPerLocation reduces rows to one entry per LocationID, namely
-// the one with the smallest Timestamp. All input rows are assumed to share
-// the same ParameterID (this is called once per parameter). Output order is
-// not specified.
-func keepEarliestPerLocation(rows []db.ForecastRow) []db.ForecastRow {
+// keepAtReferenceTime reduces rows to one entry per LocationID, namely the
+// row that represents the now-cast of a run at reference time ref: the row
+// whose Timestamp is the earliest at or after ref (lead time zero, i.e. the
+// forecast valid at the run's own time). If a location has no row at or after
+// ref, its least-stale (latest) row is kept. All input rows are assumed to
+// share the same ParameterID (this is called once per parameter). Output order
+// is not specified.
+func keepAtReferenceTime(rows []db.ForecastRow, ref time.Time) []db.ForecastRow {
 	best := make(map[int64]db.ForecastRow, len(rows))
 	for _, r := range rows {
 		cur, ok := best[r.LocationID]
-		if !ok || r.Timestamp.Before(cur.Timestamp) {
+		if !ok || isBetterNow(r.Timestamp, cur.Timestamp, ref) {
 			best[r.LocationID] = r
 		}
 	}
@@ -272,6 +277,23 @@ func keepEarliestPerLocation(rows []db.ForecastRow) []db.ForecastRow {
 		out = append(out, r)
 	}
 	return out
+}
+
+// isBetterNow reports whether cand is a better now-cast for reference time ref
+// than the current best cur. A row at or after ref beats one before it; among
+// rows at or after ref the earliest lead wins; among rows strictly before ref
+// the least stale (latest) wins.
+func isBetterNow(cand, cur, ref time.Time) bool {
+	candAtOrAfter := !cand.Before(ref)
+	curAtOrAfter := !cur.Before(ref)
+	switch {
+	case candAtOrAfter != curAtOrAfter:
+		return candAtOrAfter
+	case candAtOrAfter:
+		return cand.Before(cur)
+	default:
+		return cand.After(cur)
+	}
 }
 
 // parseForecastFile is a small helper that opens & parses a forecast CSV.
