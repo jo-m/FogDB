@@ -1,7 +1,7 @@
 import 'ol/ol.css'
 import 'react-openlayers/dist/index.css'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import proj4 from 'proj4'
 import { XYZ, Vector as VectorSource } from 'ol/source'
 import { register } from 'ol/proj/proj4'
@@ -13,9 +13,11 @@ import { Feature } from 'ol'
 import { Point as OLPoint } from 'ol/geom'
 import { Style, Circle, Fill, Stroke } from 'ol/style'
 import type { Map as OLMap } from 'ol'
+import type MapBrowserEvent from 'ol/MapBrowserEvent'
 
 import { LV95, registerProj4 } from '@swissgeo/coordinates'
 import { getLV95TileGrid, getLV95ViewConfig } from '@swissgeo/coordinates/ol'
+import type { WgsBbox } from '../lib/filter'
 
 // Register the Swiss projections on proj4 and OpenLayers.
 registerProj4(proj4)
@@ -32,21 +34,42 @@ const pointsSource = new VectorSource()
 /** Neutral marker color used when no parameter is selected. */
 const NEUTRAL_COLOR = 'rgba(40, 80, 120, 0.85)'
 
-/** A single marker: a WGS84 position and an optional viridis color. */
+/** A single marker: a WGS84 position, an optional viridis color, and identity. */
 export interface MapPoint {
   lat: number
   lon: number
   color: string | null
+  pointId: number
+  inList: boolean
 }
 
 interface MapViewProps {
   points: MapPoint[]
+  onViewportChange: (bbox: WgsBbox | null) => void
+  onPointClick: (pointId: number) => void
 }
 
 /**
- * SwissTopo base map overlaid with one marker per forecast location.
+ * Compute the current map viewport as a WGS84 bounding box.
+ *
+ * @param map The OpenLayers map.
+ * @returns The visible extent in degrees, or null when the map has no size.
  */
-export default function MapView({ points }: MapViewProps) {
+function toWgsBbox(map: OLMap): WgsBbox | null {
+  const size = map.getSize()
+  if (!size || size[0] === 0 || size[1] === 0) return null
+  const extent = map.getView().calculateExtent(size)
+  const [minLon, minLat] = transform([extent[0], extent[1]], LV95.epsg, 'EPSG:4326')
+  const [maxLon, maxLat] = transform([extent[2], extent[3]], LV95.epsg, 'EPSG:4326')
+  return { minLat, minLon, maxLat, maxLon }
+}
+
+/**
+ * SwissTopo base map overlaid with one marker per forecast location. Reports
+ * viewport changes so the parent can filter by extent, and forwards marker
+ * clicks so locations can be added to or removed from a manual list.
+ */
+export default function MapView({ points, onViewportChange, onPointClick }: MapViewProps) {
   const mapRef = useRef<OLMap | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const hasFitted = useRef(false)
@@ -57,18 +80,48 @@ export default function MapView({ points }: MapViewProps) {
     for (const point of points) {
       const coords = transform([point.lon, point.lat], 'EPSG:4326', LV95.epsg)
       const feature = new Feature({ geometry: new OLPoint(coords) })
+      feature.set('pointId', point.pointId)
       feature.setStyle(
         new Style({
           image: new Circle({
-            radius: 5,
+            radius: point.inList ? 7 : 5,
             fill: new Fill({ color: point.color ?? NEUTRAL_COLOR }),
-            stroke: new Stroke({ color: 'rgba(255, 255, 255, 0.9)', width: 1 })
+            stroke: new Stroke({
+              color: point.inList ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+              width: point.inList ? 2 : 1
+            })
           })
         })
       )
       pointsSource.addFeature(feature)
     }
   }, [points])
+
+  const reportViewport = useCallback(() => {
+    const map = mapRef.current
+    if (map) onViewportChange(toWgsBbox(map))
+  }, [onViewportChange])
+
+  // Report viewport changes and forward marker clicks once the map is ready.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    const onClick = (event: MapBrowserEvent) => {
+      const feature = map.forEachFeatureAtPixel(
+        event.pixel,
+        (f) => f,
+        { hitTolerance: 5 }
+      ) as Feature | undefined
+      const pointId = feature?.get('pointId')
+      if (typeof pointId === 'number') onPointClick(pointId)
+    }
+    map.on('moveend', reportViewport)
+    map.on('singleclick', onClick)
+    return () => {
+      map.un('moveend', reportViewport)
+      map.un('singleclick', onClick)
+    }
+  }, [mapReady, reportViewport, onPointClick])
 
   // Fit the view to the marker extent once, after the first data appears.
   useEffect(() => {
@@ -77,8 +130,9 @@ export default function MapView({ points }: MapViewProps) {
     if (extent && Number.isFinite(extent[0]) && Number.isFinite(extent[2])) {
       mapRef.current.getView().fit(extent, { padding: [24, 24, 24, 24] })
       hasFitted.current = true
+      reportViewport()
     }
-  }, [mapReady, points])
+  }, [mapReady, points, reportViewport])
 
   return (
     <Map

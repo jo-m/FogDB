@@ -28,6 +28,7 @@ export interface Location {
 /** A single forecast value joined with its location, for one timestamp. */
 export interface LocationValue {
   locationId: number
+  pointId: number
   name: string
   abbr: string
   lat: number
@@ -189,6 +190,7 @@ export function getValues(
       if (!location) return null
       return {
         locationId: location.id,
+        pointId: location.pointId,
         name: location.name,
         abbr: location.abbr,
         lat: location.lat,

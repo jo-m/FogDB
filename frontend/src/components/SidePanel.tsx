@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react'
-import type { Parameter } from '../lib/db'
+import type { Location, Parameter } from '../lib/db'
 import { formatTimestamp } from '../lib/format'
 import ColorLegend from './ColorLegend'
+import LocationFilter from './LocationFilter'
 import ValuesChart, { type ChartDatum } from './ValuesChart'
 
 interface SidePanelProps {
@@ -17,6 +18,16 @@ interface SidePanelProps {
   min: number
   max: number
   valueCount: number
+  locations: Location[]
+  filteredCount: number
+  viewportFilter: boolean
+  onToggleViewport: () => void
+  manualFilter: boolean
+  onToggleManual: () => void
+  manualPointIds: number[]
+  onAddPointId: (pointId: number) => void
+  onRemovePointId: (pointId: number) => void
+  onClearManual: () => void
 }
 
 const sectionStyle: CSSProperties = {
@@ -35,8 +46,8 @@ const headingStyle: CSSProperties = {
 }
 
 /**
- * Right-hand panel listing available parameters and, once one is selected,
- * the time slider, sort control, color legend and value chart.
+ * Right-hand panel listing location filters, available parameters and, once
+ * one is selected, the time slider, sort control, color legend and value chart.
  */
 export default function SidePanel(props: SidePanelProps) {
   const {
@@ -51,11 +62,36 @@ export default function SidePanel(props: SidePanelProps) {
     onToggleSort,
     min,
     max,
-    valueCount
+    valueCount,
+    locations,
+    filteredCount,
+    viewportFilter,
+    onToggleViewport,
+    manualFilter,
+    onToggleManual,
+    manualPointIds,
+    onAddPointId,
+    onRemovePointId,
+    onClearManual
   } = props
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
+      <div style={{ ...sectionStyle, flex: '0 0 auto' }}>
+        <LocationFilter
+          locations={locations}
+          filteredCount={filteredCount}
+          viewportFilter={viewportFilter}
+          onToggleViewport={onToggleViewport}
+          manualFilter={manualFilter}
+          onToggleManual={onToggleManual}
+          manualPointIds={manualPointIds}
+          onAddPointId={onAddPointId}
+          onRemovePointId={onRemovePointId}
+          onClearManual={onClearManual}
+        />
+      </div>
+
       <div style={{ ...sectionStyle, flex: '0 0 auto' }}>
         <h2 style={headingStyle}>Parameters</h2>
         <div style={{ maxHeight: 220, overflowY: 'auto' }}>
