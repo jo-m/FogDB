@@ -11,7 +11,7 @@ import { defaults as defaultInteractions } from 'ol/interaction'
 import { Map, View, TileLayer, VectorLayer } from 'react-openlayers'
 import { Feature } from 'ol'
 import { Point as OLPoint } from 'ol/geom'
-import { Style, Circle, Fill, Stroke } from 'ol/style'
+import { Style, Circle, Fill, Stroke, Icon } from 'ol/style'
 import type { Map as OLMap } from 'ol'
 import type MapBrowserEvent from 'ol/MapBrowserEvent'
 
@@ -34,11 +34,16 @@ const pointsSource = new VectorSource()
 /** Neutral marker color used when no parameter is selected. */
 const NEUTRAL_COLOR = 'rgba(40, 80, 120, 0.85)'
 
-/** A single marker: a WGS84 position, an optional viridis color, and identity. */
+/** Edge length of a rendered pictogram icon, in pixels. */
+const PICTOGRAM_SIZE = 30
+
+/** A single marker: a WGS84 position, an optional viridis color or pictogram,
+ * and identity. */
 export interface MapPoint {
   lat: number
   lon: number
   color: string | null
+  pictogramUrl: string | null
   pointId: number
   inList: boolean
 }
@@ -81,18 +86,42 @@ export default function MapView({ points, onViewportChange, onPointClick }: MapV
       const coords = transform([point.lon, point.lat], 'EPSG:4326', LV95.epsg)
       const feature = new Feature({ geometry: new OLPoint(coords) })
       feature.set('pointId', point.pointId)
-      feature.setStyle(
-        new Style({
-          image: new Circle({
-            radius: point.inList ? 7 : 5,
-            fill: new Fill({ color: point.color ?? NEUTRAL_COLOR }),
-            stroke: new Stroke({
-              color: point.inList ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-              width: point.inList ? 2 : 1
+      if (point.pictogramUrl) {
+        // A pictogram marker is the remote SVG icon on top of a white halo
+        // that keeps it legible over the base map.
+        feature.setStyle([
+          new Style({
+            image: new Circle({
+              radius: point.inList ? 21 : 18,
+              fill: new Fill({ color: 'rgba(255, 255, 255, 0.95)' }),
+              stroke: new Stroke({
+                color: point.inList ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                width: point.inList ? 2 : 1
+              })
+            })
+          }),
+          new Style({
+            image: new Icon({
+              src: point.pictogramUrl,
+              width: PICTOGRAM_SIZE,
+              height: PICTOGRAM_SIZE
             })
           })
-        })
-      )
+        ])
+      } else {
+        feature.setStyle(
+          new Style({
+            image: new Circle({
+              radius: point.inList ? 7 : 5,
+              fill: new Fill({ color: point.color ?? NEUTRAL_COLOR }),
+              stroke: new Stroke({
+                color: point.inList ? 'rgba(0, 0, 0, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                width: point.inList ? 2 : 1
+              })
+            })
+          })
+        )
+      }
       pointsSource.addFeature(feature)
     }
   }, [points])

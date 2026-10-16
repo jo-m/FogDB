@@ -13,6 +13,7 @@ import {
   type Parameter
 } from './lib/db'
 import { inBbox, type WgsBbox } from './lib/filter'
+import { isPictogramParameter, pictogramUrl } from './lib/pictogram'
 import {
   MANUAL_LOCATIONS_KEY,
   parseManualPointIds,
@@ -149,14 +150,17 @@ export default function App() {
   const scale = useMemo(() => makeViridisScale(min, max), [min, max])
 
   // The map always shows every location; the viewport and manual-list filters
-  // only narrow the chart.
+  // only narrow the chart. Pictogram parameters render their remote SVG icon
+  // instead of a viridis-colored dot.
   const points = useMemo<MapPoint[]>(() => {
     if (!loaded) return []
+    const pictogram = selectedParameter ? isPictogramParameter(selectedParameter.shortname) : false
     if (!selectedParameter) {
       return loaded.locations.map((l) => ({
         lat: l.lat,
         lon: l.lon,
         color: null,
+        pictogramUrl: null,
         pointId: l.pointId,
         inList: manualPointIdSet.has(l.pointId)
       }))
@@ -164,7 +168,8 @@ export default function App() {
     return values.map((v) => ({
       lat: v.lat,
       lon: v.lon,
-      color: scale(v.value),
+      color: pictogram ? null : scale(v.value),
+      pictogramUrl: pictogram ? pictogramUrl(v.value) : null,
       pointId: v.pointId,
       inList: manualPointIdSet.has(v.pointId)
     }))
